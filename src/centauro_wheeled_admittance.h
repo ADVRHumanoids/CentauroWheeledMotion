@@ -151,7 +151,7 @@ namespace XBot { namespace Cartesian {
 
         std::string get_parent(std::string link);
 
-        Eigen::VectorXd _q, _dq, _ddq, _dq_steering, _qpostural;
+        Eigen::VectorXd _q, _dq, _ddq, _dq_steering, _qpostural, _tau_offset, _tau;
 
         CartesianTask::Ptr _waist_cart;
         std::vector<CartesianTask::Ptr> _cartesian_tasks;

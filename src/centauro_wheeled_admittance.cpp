@@ -6,6 +6,10 @@
 #include <OpenSoT/constraints/velocity/JointLimits.h>
 #include <OpenSoT/constraints/TaskToConstraint.h>
 
+#ifndef YAML_DEST_PATH
+#error YAML_DEST_PATH not defined.
+#endif
+
 extern "C" XBot::Cartesian::CartesianInterface* create_instance(XBot::ModelInterface::Ptr model,
                                                                 XBot::Cartesian::ProblemDescription pb)
 {
@@ -26,7 +30,7 @@ CentauroWheeledAdmittance::CentauroWheeledAdmittance(ModelInterface::Ptr model):
     
     _force_est = std::make_shared<Utils::ForceEstimation>(_model);
     auto pelvis_ft = _force_est->add_link("pelvis", 
-                         {0, 1, 5}, 
+                         {0, 1, 2, 3, 4, 5}, 
                          {"virtual_chain", "front_left_leg", "front_right_leg",
                              "rear_left_leg", "rear_right_leg" }
                         );
@@ -223,6 +227,18 @@ CentauroWheeledAdmittance::CentauroWheeledAdmittance(ModelInterface::Ptr model):
     {
         _lambda_map[t->getDistalLink()] = t->getLambda();
     }
+    
+    _tau_offset.setZero(_model->getJointNum());
+    
+    YAML::Node config = YAML::LoadFile(YAML_DEST_PATH);
+    
+    for(auto joint_tau_pair : config) {
+        std::string j_name = joint_tau_pair.first.as<std::string>();
+        double tau_offset = joint_tau_pair.second.as<double>();
+        
+        _tau_offset[_model->getDofIndex(j_name)] = tau_offset;
+    }
+
 }
 
 double SimpleSteering::sign(double x)
@@ -365,6 +381,11 @@ bool CentauroWheeledAdmittance::update(double time, double period)
     XBot::Cartesian::CartesianInterfaceImpl::update(time, period);
 
     _model->getJointPosition(_q);
+    _model->getJointEffort(_tau);
+    
+    _tau += _tau_offset;
+    
+    _model->setJointEffort(_tau);
 
     /* Update reference for all cartesian tasks */
     for(auto cart_task : _cartesian_tasks)
@@ -396,6 +417,8 @@ bool CentauroWheeledAdmittance::update(double time, double period)
         cart_task->setReference(T_ref.translation(), v_ref.head<3>()*period);
     }
     
+    _force_est->update();
+    _force_est->log(_logger);
     
     _autostack->update(_q);
     _autostack->log(_logger);
