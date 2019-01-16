@@ -30,10 +30,15 @@ CentauroWheeledAdmittance::CentauroWheeledAdmittance(ModelInterface::Ptr model):
     
     _force_est = std::make_shared<Utils::ForceEstimation>(_model);
     auto pelvis_ft = _force_est->add_link("pelvis", 
-                         {0, 1, 2, 3, 4, 5}, 
+                         {0, 1, 5}, 
                          {"virtual_chain", "front_left_leg", "front_right_leg",
                              "rear_left_leg", "rear_right_leg" }
                         );
+    
+    _force_est->add_link("wheel_1", {0, 1, 2}, {"front_left_leg"});
+    _force_est->add_link("wheel_2", {0, 1, 2}, {"front_right_leg"});
+    _force_est->add_link("wheel_3", {0, 1, 2}, {"rear_left_leg"});
+    _force_est->add_link("wheel_4", {0, 1, 2}, {"rear_right_leg"});
     
     std::vector<string> joints_out;
     Eigen::VectorXd _q_motor;
@@ -166,15 +171,16 @@ CentauroWheeledAdmittance::CentauroWheeledAdmittance(ModelInterface::Ptr model):
     auto p_pos_z_aggr = _p_cart[0]%pos_idx_z + _p_cart[1]%pos_idx_z + _p_cart[2]%pos_idx_z + _p_cart[3]%pos_idx_z;
     
     auto waist_adm = boost::make_shared<AdmittanceTask>("WAIST_CART",
-                                                     _q,
-                                                     *_model,
-                                                     "world",
-                                                     pelvis_ft
+                                                       _q,
+                                                       *_model,
+                                                       "world",
+                                                        pelvis_ft
                                                     );
     
     {
         Eigen::Vector6d C, omega;
-        C.setConstant(0.0005);
+        C << 5e-5   ,    5e-5,      0, 
+             0      ,       0,   1e-4;
         omega.setConstant(2.0 * M_PI * 1.0);
         
         waist_adm->setRawParams(C, omega, 0.0, 0.01);
@@ -183,7 +189,7 @@ CentauroWheeledAdmittance::CentauroWheeledAdmittance(ModelInterface::Ptr model):
 
     _waist_cart = waist_adm;
 
-    _cartesian_tasks.push_back(_waist_cart);
+//     _cartesian_tasks.push_back(_waist_cart);
 
     _postural = boost::make_shared<OpenSoT::tasks::velocity::Postural>(_q);
     _postural->setLambda(0.05);
@@ -431,29 +437,25 @@ bool CentauroWheeledAdmittance::update(double time, double period)
     }
     
     /* Steering */
-    Eigen::Vector3d waist_vref;
-    waist_vref << _waist_cart->getError().head<2>(), _waist_cart->getError()(5);
-    Eigen::Vector3d wheel_vref(0, 0, 0);
-    _logger->add("waist_vref", waist_vref);
 
     for(int i = 0; i < NUM_WHEELS; i++)
     {
         auto& steering = _steering[i];
+        
         std::string ankle_name = get_parent(steering.getWheelName());
+        
         Eigen::Vector6d wheel_vel;
         _model->getVelocityTwist(ankle_name, wheel_vel);
         _logger->add(steering.getWheelName() + "_vel", wheel_vel);
+        
         Eigen::Matrix3d w_R_ankle;
         _model->getOrientation(ankle_name, w_R_ankle);
         wheel_vel.head<3>() += wheel_vel.tail<3>().cross(w_R_ankle * Eigen::Vector3d(0.0, 0.0, 0.30));
         
         steering.log(_logger);
         
-        
-        
-        
-        wheel_vref = _wheel_cart_rel[i]->getError().head<3>();
-        _qpostural(steering.getDofIndex()) = steering.computeSteeringAngle(waist_vref*0, wheel_vel.head<3>());
+        _qpostural(steering.getDofIndex()) = steering.computeSteeringAngle(Eigen::Vector3d::Zero(),
+                                                                           wheel_vel.head<3>());
         
         const double STEERING_GAIN = 0.1;
         const double MAX_STEERING_SPEED = 3.0;
@@ -463,9 +465,7 @@ bool CentauroWheeledAdmittance::update(double time, double period)
         _steering_task->setReference(_q, _dq_steering);
         
         
-        
-        
-        _logger->add("wheel_vref_"+std::to_string(i+1), wheel_vref);
+        _logger->add("wheel_vref_"+std::to_string(i+1), wheel_vel);
         _logger->add("steering_angle_"+std::to_string(i+1), _qpostural(steering.getDofIndex()));
     }
 
