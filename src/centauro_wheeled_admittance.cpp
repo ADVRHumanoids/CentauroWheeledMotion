@@ -28,7 +28,8 @@ CentauroWheeledAdmittance::CentauroWheeledAdmittance(ModelInterface::Ptr model):
     _qpostural = _q;
     _dq_steering = _ddq = _dq = _q*0;
     
-    _force_est = std::make_shared<Utils::ForceEstimation>(_model);
+    const double SVD_THR = 0.005;
+    _force_est = std::make_shared<Utils::ForceEstimation>(_model, SVD_THR);
     auto pelvis_ft = _force_est->add_link("pelvis", 
                          {0, 1, 5}, 
                          {"virtual_chain", "front_left_leg", "front_right_leg",
@@ -179,12 +180,14 @@ CentauroWheeledAdmittance::CentauroWheeledAdmittance(ModelInterface::Ptr model):
     
     {
         Eigen::Vector6d C, omega;
-        C << 5e-5   ,    5e-5,      0, 
+        C << 2.5e-5   ,    2.5e-5,      0, 
              0      ,       0,   1e-4;
-        omega.setConstant(2.0 * M_PI * 1.0);
+        omega.setConstant(2.0 * M_PI * 0.5);
         
         waist_adm->setRawParams(C, omega, 0.0, 0.01);
-        waist_adm->setDeadZone(Eigen::Vector6d::Constant(5.0));
+        Eigen::Vector6d dead_zone;
+        dead_zone << 5.0, 5.0, 5.0, 8.0, 8.0, 8.0;
+        waist_adm->setDeadZone(dead_zone);
     }
 
     _waist_cart = waist_adm;
@@ -387,11 +390,6 @@ bool CentauroWheeledAdmittance::update(double time, double period)
     XBot::Cartesian::CartesianInterfaceImpl::update(time, period);
 
     _model->getJointPosition(_q);
-    _model->getJointEffort(_tau);
-    
-    _tau += _tau_offset;
-    
-    _model->setJointEffort(_tau);
 
     /* Update reference for all cartesian tasks */
     for(auto cart_task : _cartesian_tasks)

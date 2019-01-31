@@ -21,7 +21,9 @@ bool compute_tau_offset()
     g_tau_offset.setZero(g_model->getJointNum());
     Eigen::VectorXd tau, nl;
     
-    const int ITER = 100;
+    ros::Rate rate(100);
+    
+    const int ITER = 300;
     
     for(int i = 0; i < ITER; i++)
     {
@@ -35,7 +37,12 @@ bool compute_tau_offset()
         
         g_tau_offset += (nl - tau);
         
+        rate.sleep();
+        
     }
+    
+    std::cout << "Measured torques\n" << tau.transpose();
+    std::cout << "Model torques\n" << nl.transpose() << std::endl;
     
     g_tau_offset /= ITER;
     
@@ -49,7 +56,9 @@ int main(int argc, char** argv) {
     
     ros::init(argc, argv, "centauro_tau_offset_yaml");
     ros::NodeHandle nh, nh_priv("~");
-    auto xbot_cfg = XBot::ConfigOptions::FromConfigFile(XBot::Utils::getXBotConfig());
+    auto xbot_cfg = XBot::ConfigOptionsFromParamServer();
+    xbot_cfg.set_parameter("is_model_floating_base", true);
+    xbot_cfg.set_parameter<std::string>("model_type", "RBDL");
     
     auto logger = XBot::MatLogger::getLogger("/tmp/centauro_tau_offset_yaml_log");
     auto robot = g_robot = XBot::RobotInterface::getRobot(xbot_cfg);
